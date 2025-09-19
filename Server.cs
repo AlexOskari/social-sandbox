@@ -6,7 +6,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Firebase.Database;
+using Unity.Services.CloudSave;
 
 public class Server : MonoBehaviour
 {
@@ -64,12 +64,12 @@ public class Server : MonoBehaviour
             }
 
             Debug.Log($"[Server] Starting world: {WorldName}");
-            
+
             // Start server
             NetworkManager.Singleton.StartServer();
-            
+
             // Register to Firebase
-            await RegisterWorldToFirebase(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
+            await RegisterWorldToCloudSave(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
         }
         catch (Exception e)
         {
@@ -83,7 +83,7 @@ public class Server : MonoBehaviour
         NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(WorldMessages.JoinWorld, OnJoinWorldRequest);
     }
 
-    private async Task RegisterWorldToFirebase(string worldName, string ip, ushort port)
+    private async Task RegisterWorldToCloudSave(string worldName, string ip, ushort port)
     {
         if (useLocalServer)
         {
@@ -96,17 +96,16 @@ public class Server : MonoBehaviour
             var worldData = new Dictionary<string, object>
             {
                 { "ip", ip },
-                { "port", port },
-                { "createdAt", ServerValue.Timestamp }
+                { "port", port }
             };
 
-            var dbRef = FirebaseDatabase.DefaultInstance.RootReference.Child("Worlds").Child(worldName);
-            await dbRef.SetValueAsync(worldData);
-            Debug.Log($"[Server] World '{worldName}' registered in Firebase at {ip}:{port}");
+            await CloudSaveService.Instance.Data.Player.SaveAsync(worldData);
+
+            Debug.Log($"[Server] World '{worldName}' registered in CloudSave at {ip}:{port}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Server] Failed to register world in Firebase : {e}");
+            Debug.LogError($"[Server] Failed to register world in CloudSave: {e}");
         }
     }
 
@@ -129,5 +128,25 @@ public class Server : MonoBehaviour
         player.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId);
 
         Debug.Log($"[Server] {clientId} joined world {WorldName}");
+    }
+
+    public static async Task<(string ip, ushort port)> LoadServerEndpoint()
+    {
+        try
+        {
+            var keys = new HashSet<string> { "ip", "port" };
+            var results = await CloudSaveService.Instance.Data.Player.LoadAsync(keys);
+
+            string ip = results["ip"].Value.GetAsString();
+            ushort port = ushort.Parse(results["port"].Value.GetAsString());
+
+            Debug.Log($"[Server] Loaded server endpoint: {ip}:{port}");
+            return (ip, port);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Server] Failed to load server endpoint from CloudSave: {e}");
+            return ("127.0.0.1", 7777); // fallback for local testing
+        }
     }
 }
