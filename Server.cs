@@ -93,13 +93,22 @@ public class Server : MonoBehaviour
 
         try
         {
-            var worldData = new Dictionary<string, object>
+            var info = new WorldInfo
             {
-                { "ip", ip },
-                { "port", port }
+                ip = ip,
+                port = port,
+                createdAt = DateTime.UtcNow.ToString("o")
             };
 
-            await CloudSaveService.Instance.Data.Player.SaveAsync(worldData);
+            string json = JsonUtility.ToJson(info);
+
+            // Cloud Save API expects Dictionary<string,string>
+            var dict = new Dictionary<string, object>
+            {
+                {$"worlds/{worldName}", json}
+            };
+
+            await CloudSaveService.Instance.Data.Player.SaveAsync(dict);
 
             Debug.Log($"[Server] World '{worldName}' registered in CloudSave at {ip}:{port}");
         }
@@ -148,5 +157,13 @@ public class Server : MonoBehaviour
             Debug.LogError($"[Server] Failed to load server endpoint from CloudSave: {e}");
             return ("127.0.0.1", 7777); // fallback for local testing
         }
+    }
+
+    [Serializable]
+    public class WorldInfo
+    {
+        public string ip;
+        public ushort port;
+        public string createdAt;
     }
 }

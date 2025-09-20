@@ -9,6 +9,7 @@ using Unity.Collections;
 using System.Collections.Generic;
 using System;
 using Unity.Services.CloudSave;
+using UnityEditor.Experimental.GraphView;
 
 public class Client : MonoBehaviour
 {
@@ -71,25 +72,18 @@ public class Client : MonoBehaviour
         else
         {
             // Ask CloudSave where this world lives
-            //var snapshot = await FirebaseDatabase.DefaultInstance.RootReference.Child("Worlds").Child(worldName).GetValueAsync();
+            Debug.Log("[Client] Loading world info from CloudSave...");
             var results = await CloudSaveService.Instance.Data.Player.LoadAsync(new HashSet<string> { "ip", "port" });
-            bool ipExists = results.ContainsKey("ip");
-            bool portExists = results.ContainsKey("port");
+            var info = await LoadWorldInfo(worldName);
 
-            if (ipExists && portExists)
+            if (info == null)
             {
-                // Load the server ip and port from CloudSave
-                var (ip, port) = await Server.LoadServerEndpoint();
-
-                // Apply the loaded endpoint to the Unity Transport
-                Debug.Log($"[Client] Connecting to {worldName} at {ip}:{port}");
-                transport.SetConnectionData(ip, port);
-            }
-            else
-            {
-                Debug.LogWarning($"[Client] World {worldName} not found in CloudSave! (TODO: request new allocation");
+                Debug.LogError($"[Client] World '{worldName}' not found in CloudSave.");
                 return;
             }
+
+            Debug.Log($"[Client] Connecting to {worldName} at {info.ip}:{info.port}");
+            transport.SetConnectionData(info.ip, info.port);
         }
 
         NetworkManager.Singleton.StartClient();
@@ -104,6 +98,33 @@ public class Client : MonoBehaviour
             }
         };
     }
+
+    private async Task<Server.WorldInfo> LoadWorldInfo(string worldName)
+    {
+        try
+        {
+            var key = $"worlds/{worldName}";
+            var keys = new HashSet<string> { key };
+            var results = await CloudSaveService.Instance.Data.Player.LoadAsync(keys);
+
+            if (!results.TryGetValue(key, out var item) || item == null)
+                return null;
+
+            // results[key] is an Item; the stored JSON string is in Item.Value
+            string json = item.Value?.ToString();
+            if (string.IsNullOrEmpty(json))
+            {
+                Debug.LogWarning($"[Client] Cloud Save item for key '{key}' empty or null.");
+                return null;
+            }
+            var info = JsonUtility.FromJson<Server.WorldInfo>(json);
+            return info;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[Client] Failed to load world info: {e}");
+            return null;
+        }
 
     //public async Task CreateWorld(string worldName, string ip, ushort port)
     //{
@@ -134,5 +155,5 @@ public class Client : MonoBehaviour
     //    {
     //        Debug.LogError($"[Client] Failed to create world: {e}");
     //    }
-    //}
+    }
 }
