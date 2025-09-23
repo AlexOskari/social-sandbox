@@ -9,7 +9,6 @@ using Unity.Collections;
 using System.Collections.Generic;
 using System;
 using Unity.Services.CloudSave;
-using UnityEditor.Experimental.GraphView;
 
 public class Client : MonoBehaviour
 {
@@ -125,35 +124,5 @@ public class Client : MonoBehaviour
             Debug.LogError($"[Client] Failed to load world info: {e}");
             return null;
         }
-
-    //public async Task CreateWorld(string worldName, string ip, ushort port)
-    //{
-    //    if (firebaseAuth == null || firebaseAuth.CurrentUser == null)
-    //    {
-    //        Debug.LogError("[Client] Canot create world - not signet into Firebase!");
-    //        return;
-    //    }
-
-    //    string userId = firebaseAuth.CurrentUser.UserId;
-
-    //    var worldData = new Dictionary<string, object>
-    //    {
-    //        { "owner", userId },
-    //        { "ip", ip },
-    //        { "port", port },
-    //        { "createdAt", ServerValue.Timestamp }
-    //    };
-
-    //    DatabaseReference dbRef = FirebaseDatabase.DefaultInstance.RootReference.Child("Worlds").Child(worldName);
-
-    //    try
-    //    {
-    //        await dbRef.SetValueAsync(worldData);
-    //        Debug.Log($"[Client] World '{worldName}' created and stored in Firebase");
-    //    }
-    //    catch (Exception e)
-    //    {
-    //        Debug.LogError($"[Client] Failed to create world: {e}");
-    //    }
     }
 }

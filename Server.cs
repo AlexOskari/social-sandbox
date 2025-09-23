@@ -7,6 +7,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Unity.Services.CloudSave;
+using Supabase;
+using Supabase.Gotrue;
+using Supabase.Gotrue.Exceptions;
+using Newtonsoft.Json;
 
 public class Server : MonoBehaviour
 {
@@ -20,13 +24,15 @@ public class Server : MonoBehaviour
 
     private UnityTransport transport;
 
+    const string SupabaseUrl = "https://znfcfvrrsokbqymcbrsr.supabase.co";
+
     async void Awake()
     {
-        Debug.Log("Server Scene Opened!");
-
-        //!System.Environment.GetCommandLineArgs().Any(arg => arg == "-port") || 
-        if (!System.Environment.GetCommandLineArgs().Any(arg => arg == "-launch-as-server"))
+        // Make sure this is a server
+        if (!Environment.GetCommandLineArgs().Any(arg => arg == "-launch-as-server"))
             return;
+
+        Debug.Log("Server Scene Opened!");
 
         transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
         if (transport == null)
@@ -35,23 +41,41 @@ public class Server : MonoBehaviour
             return;
         }
 
-        Debug.Log("Initializing Unity Services for Server...");
+        Debug.Log("[Server] Initializing Supabase for server...");
+        try
+        {
+            if (useLocalServer)
+            {
+                // Local testing: no need to read or write to Supabase database
+                Debug.Log("[Server] Skipping Supabase initialization for local testing");
+            }
+            else
+            {
+                await InitializeSupabase();
+            }
+        } 
+        catch (Exception e)
+        {
+            Debug.LogError($"[Server] Failed to initialize Supabase: {e}");
+        }
+
+        Debug.Log("[Server] Initializing Unity Services for server...");
         try
         {
             await UnityServices.InitializeAsync();
-            Debug.Log("Unity Services initialized");
+            Debug.Log("[Server] Unity Services initialized");
 
             if (useLocalServer)
             {
                 // Local testing: manually set transport data
-                Debug.Log($"Starting LOCAL server on {localHost}:{localPort}");
+                Debug.Log($"[Server] Starting LOCAL server on {localHost}:{localPort}");
                 transport.ConnectionData.Address = localHost;
                 transport.ConnectionData.Port = localPort;
             }
             else
             {
                 // MPS deployment: use allocated port automatically
-                Debug.Log("Starting MPS dedicated server");
+                Debug.Log("[Server] Starting MPS dedicated server");
                 // Optional: you can access fleet allocation if needed
                 // var allocation = await MultiplayService.Instance.GetFleetAllocationAsync();
             }
@@ -68,12 +92,12 @@ public class Server : MonoBehaviour
             // Start server
             NetworkManager.Singleton.StartServer();
 
-            // Register to Firebase
+            // Register to CloudSave
             await RegisterWorldToCloudSave(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Server] Failed to initialize: {e}");
+            Debug.LogError($"[Server] Failed to initialize Unity Services: {e}");
         }
     }
 
@@ -87,7 +111,7 @@ public class Server : MonoBehaviour
     {
         if (useLocalServer)
         {
-            Debug.Log("[Server] Skipping Firebase registration when hosted locally.");
+            Debug.Log("[Server] Skipping CloudSave registration when hosted locally.");
             return;
         }
 
@@ -139,24 +163,35 @@ public class Server : MonoBehaviour
         Debug.Log($"[Server] {clientId} joined world {WorldName}");
     }
 
-    public static async Task<(string ip, ushort port)> LoadServerEndpoint()
+    private async Task<Supabase.Client> InitializeSupabase()
     {
-        try
+        // Search for supabase service key in launch parameters
+        string[] args = Environment.GetCommandLineArgs();
+        string supabaseKey = "";
+        foreach(var arg in args)
         {
-            var keys = new HashSet<string> { "ip", "port" };
-            var results = await CloudSaveService.Instance.Data.Player.LoadAsync(keys);
-
-            string ip = results["ip"].Value.GetAsString();
-            ushort port = ushort.Parse(results["port"].Value.GetAsString());
-
-            Debug.Log($"[Server] Loaded server endpoint: {ip}:{port}");
-            return (ip, port);
+            if (arg.StartsWith("-supabaseKey="))
+                supabaseKey = arg.Substring("-supabaseKey=".Length);
         }
-        catch (Exception e)
+
+        // If the key wasn't found:
+        if (supabaseKey == "")
         {
-            Debug.LogError($"[Server] Failed to load server endpoint from CloudSave: {e}");
-            return ("127.0.0.1", 7777); // fallback for local testing
+            Debug.LogError("[Server] Couldn't find supabase service key in launch parameters!");
+            return null;
         }
+
+        // Initialize supabase client for server
+        var clientOptions = new SupabaseOptions
+        {
+            AutoRefreshToken = true,
+            AutoConnectRealtime = true
+        };
+
+        var client = new Supabase.Client(SupabaseUrl, supabaseKey, clientOptions);
+        await client.InitializeAsync();
+        Debug.Log("[Server] Supabase initialized successfully.");
+        return client;
     }
 
     [Serializable]
