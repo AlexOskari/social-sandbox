@@ -81,8 +81,8 @@ public class Client : MonoBehaviour
                 return;
             }
 
-            Debug.Log($"[Client] Connecting to {worldName} at {info.ip}:{info.port}");
-            transport.SetConnectionData(info.ip, info.port);
+            Debug.Log($"[Client] Connecting to {worldName} at {info.Ip}:{info.Port}");
+            transport.SetConnectionData(info.Ip, (ushort)info.Port);
         }
 
         NetworkManager.Singleton.StartClient();
@@ -98,7 +98,7 @@ public class Client : MonoBehaviour
         };
     }
 
-    private async Task<Server.WorldInfo> LoadWorldInfo(string worldName)
+    private async Task<Server.WorldRow> LoadWorldInfo(string worldName)
     {
         try
         {
@@ -116,7 +116,7 @@ public class Client : MonoBehaviour
                 Debug.LogWarning($"[Client] Cloud Save item for key '{key}' empty or null.");
                 return null;
             }
-            var info = JsonUtility.FromJson<Server.WorldInfo>(json);
+            var info = JsonUtility.FromJson<Server.WorldRow>(json);
             return info;
         }
         catch (Exception e)

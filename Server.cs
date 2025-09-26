@@ -6,11 +6,12 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Unity.Services.CloudSave;
 using Supabase;
 using Supabase.Gotrue;
 using Supabase.Gotrue.Exceptions;
 using Newtonsoft.Json;
+using Supabase.Postgrest.Models;
+using Supabase.Postgrest.Attributes;
 
 public class Server : MonoBehaviour
 {
@@ -25,10 +26,10 @@ public class Server : MonoBehaviour
     private UnityTransport transport;
 
     const string SupabaseUrl = "https://znfcfvrrsokbqymcbrsr.supabase.co";
+    private Supabase.Client _client;
 
     async void Awake()
     {
-        // Make sure this is a server
         if (!Environment.GetCommandLineArgs().Any(arg => arg == "-launch-as-server"))
             return;
 
@@ -51,7 +52,7 @@ public class Server : MonoBehaviour
             }
             else
             {
-                await InitializeSupabase();
+                _client = await InitializeSupabase();
             }
         } 
         catch (Exception e)
@@ -92,8 +93,8 @@ public class Server : MonoBehaviour
             // Start server
             NetworkManager.Singleton.StartServer();
 
-            // Register to CloudSave
-            await RegisterWorldToCloudSave(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
+            // Register to Supabase
+            await RegisterWorldToSupabase(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
         }
         catch (Exception e)
         {
@@ -107,38 +108,32 @@ public class Server : MonoBehaviour
         NetworkManager.Singleton.CustomMessagingManager.RegisterNamedMessageHandler(WorldMessages.JoinWorld, OnJoinWorldRequest);
     }
 
-    private async Task RegisterWorldToCloudSave(string worldName, string ip, ushort port)
+    private async Task RegisterWorldToSupabase(string worldName, string ip, ushort port)
     {
         if (useLocalServer)
         {
-            Debug.Log("[Server] Skipping CloudSave registration when hosted locally.");
+            Debug.Log("[Server] Skipping Supabase registration when hosted locally.");
             return;
         }
 
         try
         {
-            var info = new WorldInfo
+            Debug.Log("[Server] Registering new world row to Supabase...");
+            var world = new WorldRow
             {
-                ip = ip,
-                port = port,
-                createdAt = DateTime.UtcNow.ToString("o")
+                Name = worldName,
+                Ip = ip,
+                Port = port
+                //createdAt = DateTime.UtcNow.ToString("o")
             };
 
-            string json = JsonUtility.ToJson(info);
+            var response = await _client.From<WorldRow>().Insert(world);
 
-            // Cloud Save API expects Dictionary<string,string>
-            var dict = new Dictionary<string, object>
-            {
-                {$"worlds/{worldName}", json}
-            };
-
-            await CloudSaveService.Instance.Data.Player.SaveAsync(dict);
-
-            Debug.Log($"[Server] World '{worldName}' registered in CloudSave at {ip}:{port}");
+            Debug.Log($"[Server] World '{worldName}' registered in Supabase at {ip}:{port}");
         }
         catch (Exception e)
         {
-            Debug.LogError($"[Server] Failed to register world in CloudSave: {e}");
+            Debug.LogError($"[Server] Failed to register world in Supabase: {e}");
         }
     }
 
@@ -194,11 +189,15 @@ public class Server : MonoBehaviour
         return client;
     }
 
+    [Table("worlds")]
     [Serializable]
-    public class WorldInfo
+    public class WorldRow : BaseModel
     {
-        public string ip;
-        public ushort port;
-        public string createdAt;
+        //[PrimaryKey("id", false)]
+        //public long Id { get; set; }
+
+        [Column("name")] public string Name { get; set; }
+        [Column("ip")] public string Ip { get; set; }
+        [Column("port")] public int Port { get; set; }
     }
 }
