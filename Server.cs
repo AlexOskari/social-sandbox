@@ -25,13 +25,12 @@ public class Server : MonoBehaviour
 
     private UnityTransport transport;
 
-    const string SupabaseUrl = "https://znfcfvrrsokbqymcbrsr.supabase.co";
+    const string SUPABASE_URL = "https://znfcfvrrsokbqymcbrsr.supabase.co";
     private Supabase.Client _client;
 
     async void Awake()
     {
-        if (!Environment.GetCommandLineArgs().Any(arg => arg == "-launch-as-server"))
-            return;
+        if (!Environment.GetCommandLineArgs().Any(arg => arg == "-launch-as-server")) return;
 
         Debug.Log("Server Scene Opened!");
 
@@ -183,7 +182,7 @@ public class Server : MonoBehaviour
             AutoConnectRealtime = true
         };
 
-        var client = new Supabase.Client(SupabaseUrl, supabaseKey, clientOptions);
+        var client = new Supabase.Client(SUPABASE_URL, supabaseKey, clientOptions);
         await client.InitializeAsync();
         Debug.Log("[Server] Supabase initialized successfully.");
         return client;
