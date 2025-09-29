@@ -1,17 +1,21 @@
 using UnityEngine;
 using Unity.Services.Core;
+using Unity.Services.Multiplayer;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using System;
+using System.Net;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Supabase;
 using Supabase.Gotrue;
 using Supabase.Gotrue.Exceptions;
-using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Supabase.Postgrest.Models;
 using Supabase.Postgrest.Attributes;
+
 
 public class Server : MonoBehaviour
 {
@@ -81,7 +85,7 @@ public class Server : MonoBehaviour
             }
 
             WorldName = "DefaultWorld";
-            foreach (string arg in System.Environment.GetCommandLineArgs())
+            foreach (string arg in Environment.GetCommandLineArgs())
             {
                 if (arg.StartsWith("-world="))
                     WorldName = arg.Substring(7);
@@ -93,14 +97,16 @@ public class Server : MonoBehaviour
             NetworkManager.Singleton.StartServer();
 
             // Register to Supabase
-            await RegisterWorldToSupabase(WorldName, transport.ConnectionData.Address, transport.ConnectionData.Port);
+            string serverIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? Environment.GetEnvironmentVariable("IP");
+            string serverPort = Environment.GetEnvironmentVariable("SERVER_PORT") ?? Environment.GetEnvironmentVariable("PORT");
+            Debug.Log($"[Server] Registering {serverIp}:{serverPort} to Supabase for {WorldName}");
+            await RegisterWorldToSupabase(WorldName, serverIp, ushort.Parse(serverPort));
         }
         catch (Exception e)
         {
             Debug.LogError($"[Server] Failed to initialize Unity Services: {e}");
         }
     }
-
     private void Start()
     {
         // Register message handler
