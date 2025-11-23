@@ -192,31 +192,26 @@ public class Client : MonoBehaviour
         };
     }
 
-    private async Task<Server.WorldRow> LoadWorldInfo(string worldName)
+    public void CreateOrJoinWorld(string worldId, string desiredWorldName = null)
     {
-        try
-        {
-            var key = $"worlds/{worldName}";
-            var keys = new HashSet<string> { key };
-            var results = await CloudSaveService.Instance.Data.Player.LoadAsync(keys);
-
-            if (!results.TryGetValue(key, out var item) || item == null)
-                return null;
-
-            // results[key] is an Item; the stored JSON string is in Item.Value
-            string json = item.Value?.ToString();
-            if (string.IsNullOrEmpty(json))
-            {
-                Debug.LogWarning($"[Client] Cloud Save item for key '{key}' empty or null.");
-                return null;
-            }
-            var info = JsonUtility.FromJson<Server.WorldRow>(json);
-            return info;
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"[Client] Failed to load world info: {e}");
-            return null;
-        }
+        var msg = new JoinWorldRequest { worldId = worldId, worldName = desiredWorldName };
+        var json = JsonUtility.ToJson(msg);
+        //SendMessageToServer("JoinWorld", json);
     }
+
+    [Serializable]
+    private class JoinWorldRequest
+    {
+        public string worldId;
+        public string worldName;
+    }
+
+    // called when server replies "JoinWorldAccepted"
+    /*private void OnJoinWorldAccepted(string json)
+    {
+        var data = JsonUtility.FromJson<JoinWorldAcceptedPayload>(json);
+        Debug.Log($"Joined world: {data.worldName} (id: {data.worldId})");
+
+        // load client-side scene/UI for the world, start syncing, etc.
+    }*/
 }

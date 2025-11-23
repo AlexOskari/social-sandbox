@@ -15,12 +15,15 @@ using Supabase.Gotrue.Exceptions;
 using Newtonsoft.Json.Linq;
 using Supabase.Postgrest.Models;
 using Supabase.Postgrest.Attributes;
+using Unity.Services.Multiplay;
 
 
 public class Server : MonoBehaviour
 {
     [SerializeField] private GameObject playerPrefab;
     public string WorldName { get; private set; }
+
+    private Dictionary<string, WorldRow> worlds = new();
 
     [Header("Local Testing Settings")]
     public bool useLocalServer = false;        // Enable this for local testing
@@ -45,6 +48,8 @@ public class Server : MonoBehaviour
             return;
         }
 
+        worlds["DefaultWorld"] = new WorldRow { Name = "DefaultWorld" };
+
         Debug.Log("[Server] Initializing Supabase for server...");
         try
         {
@@ -57,7 +62,7 @@ public class Server : MonoBehaviour
             {
                 _client = await InitializeSupabase();
             }
-        } 
+        }
         catch (Exception e)
         {
             Debug.LogError($"[Server] Failed to initialize Supabase: {e}");
@@ -97,10 +102,36 @@ public class Server : MonoBehaviour
             NetworkManager.Singleton.StartServer();
 
             // Register to Supabase
+            // Get IP and Port from environment first
             string serverIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? Environment.GetEnvironmentVariable("IP");
-            string serverPort = Environment.GetEnvironmentVariable("SERVER_PORT") ?? Environment.GetEnvironmentVariable("PORT");
+            string serverPortStr = Environment.GetEnvironmentVariable("SERVER_PORT") ?? Environment.GetEnvironmentVariable("PORT");
+            
+            ushort serverPort = 0;
+            if(ushort.TryParse(serverPortStr, out ushort port))
+                serverPort = port;
+
+            // Try Unity Multiplay ServerConfig (if available) 
+            // !!! MultiplayService.Instance.ServerConfig; works on server builds, not client !!!
+#if UNITY_SERVER
+            try
+            {
+                var config = MultiplayService.Instance.ServerConfig;
+                if (!string.IsNullOrEmpty(config.IpAddress))
+                    serverIp = config.IpAddress;
+                if (config.Port > 0)
+                    serverPort = (ushort)config.Port;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Server] Could not read Multiplay ServerConfig: {e.Message}");
+            }
+#endif
+            // Fallback if no IP was found
+            if (string.IsNullOrEmpty(serverIp))
+                serverIp = "0.0.0.0";
+
             Debug.Log($"[Server] Registering {serverIp}:{serverPort} to Supabase for {WorldName}");
-            await RegisterWorldToSupabase(WorldName, serverIp, ushort.Parse(serverPort));
+            await RegisterWorldToSupabase(WorldName, serverIp, serverPort);
         }
         catch (Exception e)
         {
@@ -148,19 +179,25 @@ public class Server : MonoBehaviour
 
         Debug.Log($"[Server] Client {clientId} requested world: {requestedWorld}");
 
-        if (requestedWorld != WorldName)
+        if(!worlds.ContainsKey(requestedWorld))
         {
-            Debug.Log($"Rejecting {clientId}, world mismatch! Request: {requestedWorld} but this server is {WorldName}");
-            // Optionally disconnect the client:
-            NetworkManager.Singleton.DisconnectClient(clientId);
-            return;
+            Debug.LogWarning($"[Server] World '{requestedWorld}' does not exist. Creating it...");
+            worlds[requestedWorld] = new WorldRow { Name = requestedWorld };
         }
 
-        // Otherwise accept and spawn player
+        // Remove player from any existing world
+        foreach (var w in worlds.Values)
+            w.ConnectedPlayers.Remove(clientId);
+
+        // Add to new world
+        worlds[requestedWorld].ConnectedPlayers.Add(clientId);
+
+        Debug.Log($"[Server] Player {clientId} joined {requestedWorld}");
+
+        // Spawn the player object but parent or tag it to that world
         var player = Instantiate(playerPrefab, Vector3.zero, Quaternion.identity);
         player.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId);
-
-        Debug.Log($"[Server] {clientId} joined world {WorldName}");
+        player.GetComponent<Player>().CurrentWorld = requestedWorld; // store world name in Player
     }
 
     private async Task<Supabase.Client> InitializeSupabase()
@@ -168,7 +205,7 @@ public class Server : MonoBehaviour
         // Search for supabase service key in launch parameters
         string[] args = Environment.GetCommandLineArgs();
         string supabaseKey = "";
-        foreach(var arg in args)
+        foreach (var arg in args)
         {
             if (arg.StartsWith("-supabaseKey="))
                 supabaseKey = arg.Substring("-supabaseKey=".Length);
@@ -204,5 +241,8 @@ public class Server : MonoBehaviour
         [Column("name")] public string Name { get; set; }
         [Column("ip")] public string Ip { get; set; }
         [Column("port")] public int Port { get; set; }
+
+        // These fields ecist only in memory, not in Supabase
+        [NonSerialized] public List<ulong> ConnectedPlayers = new(); // Use Netcode IDs
     }
 }
